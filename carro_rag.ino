@@ -1,4 +1,4 @@
-/*
+/* FALTA TESTAR OS MOVIMENTOS LATERAIS
 Comandos executados no terminalpara inicializar o ROS2:
 ->ros2 topic echo /battery
 ->ros2 topic echo /cmd_vel
@@ -6,6 +6,9 @@ Comandos executados no terminalpara inicializar o ROS2:
 ->ros2 topic echo /left_motor_ticks
 ->ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ->ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
+->ros2 topic list
+->sudo chmod -R 777 /dev/ttyUSB0 //libera USB para gravação
+->rqt graph //apresenta graficamente os topicos
 considerando que a inicialização do ROS2 já ocorre via .bashrc
 */
 #include <WiFi.h>
@@ -19,6 +22,7 @@ considerando que a inicialização do ROS2 já ocorre via .bashrc
 #include <geometry_msgs/msg/twist.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+
 
 
 // Definição do Display
@@ -53,6 +57,7 @@ LiquidCrystal_I2C lcd(0x27,16,2);  // set the LCD address to 0x27 for a 16 chars
 
 volatile int encoder_count_A = 0;
 volatile int encoder_count_B = 0;
+volatile int movement_direction = 0;
 
 
 /////////////////////////////////////////////
@@ -68,7 +73,7 @@ int RightEncoderCount = 0;
 // Configuração do WI-FI
 char ssid[] = "RAG";
 char password[] = "AER101023";
-char agent_ip[] = "192.168.1.12";
+char agent_ip[] = "192.168.1.11";//IP DESKTOP
 uint agent_port = 8888;
 
 
@@ -122,12 +127,12 @@ void error_loop(){
 
 // Callback dos encoders
 void IRAM_ATTR encoder_A_ISR() {
-   encoder_count_A++;
+   encoder_count_A += movement_direction;
 }
 
 
 void IRAM_ATTR encoder_B_ISR() {
-   encoder_count_B++;
+   encoder_count_B += movement_direction;
 }
 
 
@@ -159,22 +164,24 @@ void twist_callback(const void *msg_in) {
        digitalWrite(IN2, LOW);
        digitalWrite(IN3, HIGH);
        digitalWrite(IN4, LOW);
-       Serial.println("Frente");
+       movement_direction = 1;
+       Serial.println("Frente");//valor minimo de rotação teleop speed= 0.35 turn 0.41
    } else if (linear < 0) {
        digitalWrite(IN1, LOW);
        digitalWrite(IN2, HIGH);
        digitalWrite(IN3, LOW);
        digitalWrite(IN4, HIGH);
+       movement_direction = -1;
        Serial.println("Ré");
    } else if (angular > 0) {
-       speed = abs(0.45 * 255);
+       speed = 67;
        digitalWrite(IN1, HIGH);
        digitalWrite(IN2, LOW);
        digitalWrite(IN3, LOW);
        digitalWrite(IN4, HIGH);
        Serial.println("Direita");
    } else if (angular < 0) {
-       speed = abs(0.45 * 255);
+       speed = 67;
        digitalWrite(IN1, LOW);
        digitalWrite(IN2, HIGH);
        digitalWrite(IN3, HIGH);
@@ -185,6 +192,7 @@ void twist_callback(const void *msg_in) {
        digitalWrite(IN2, LOW);
        digitalWrite(IN3, LOW);
        digitalWrite(IN4, LOW);
+       movement_direction = 0;
        Serial.println("Parado");
    }
 
@@ -208,7 +216,7 @@ void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
 
 
   right_encoder_msg.data = encoder_count_A;
-  left_encoder_msg.data = -encoder_count_B;
+  left_encoder_msg.data = encoder_count_B;
     int8_t battery_percentage = get_battery_percentage();
    battery_msg.data = battery_percentage;
    RCSOFTCHECK(rcl_publish(&battery_publisher, &battery_msg, NULL));
@@ -319,6 +327,7 @@ void setup() {
 
 
 // create executor
+//a criação de nós é feita usando rclc
  RCCHECK(rclc_executor_init(&executor, &support.context, 4, &allocator));
  RCCHECK(rclc_executor_add_timer(&executor, &timer));
  //RCCHECK(rclc_executor_add_subscription(&executor, &LEDs_subscriber, &LEDs_msg, &LEDs_subscription_callback, ON_NEW_DATA));
@@ -351,7 +360,10 @@ void loop() {
 /* Este codigo foi modificado
 usando referencias para medir a tensão da bateria,
 alem de enviar dados referentes ao encoder,
-porem não esta completa a etapa de encoder,
-necessita ser adequada para um tipo de encoder mais simples HC-20k
+foi adequado de maneira a contabilizar os pulsos 
+sempre que existe deslocamento, seja para frente ou ré,
+ incrementando ou diminuindo, respectivamente seu valor
+ OBS: Limitação devido ao tipo de encoder utilizado.
 */
+
 
